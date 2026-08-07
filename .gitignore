@@ -1,4 +1,13 @@
 /code/__pycache__
+*.py[cod]
+/.pytest_cache
+/.env
+/.venv
+/data/*_state.json
+/data/user/*
+!/data/user/.gitkeep
+/papers
+*.pdf
 /untitled.tiled-project
 /untitled.tiled-session
 /graphics/untitled.tiled-project

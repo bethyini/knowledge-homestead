@@ -1,6 +1,28 @@
+import os
+from pathlib import Path
+
 from pygame.math import Vector2
 
-WINDOW_TITLE = 'Pydew Valley'
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+APP_NAME = os.environ.get('KNOWLEDGE_GAME_APP_NAME', 'Knowledge Homestead')
+WINDOW_TITLE = APP_NAME
+
+
+def project_path_from_env(name, default):
+    configured = os.environ.get(name)
+    path = Path(configured).expanduser() if configured else Path(default).expanduser()
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+USER_DATA_DIR = project_path_from_env('KNOWLEDGE_GAME_DATA_DIR', PROJECT_ROOT / 'data' / 'user')
+ENV_PATH = project_path_from_env('KNOWLEDGE_GAME_ENV_PATH', PROJECT_ROOT / '.env')
+NOTEBOOK_PATH = project_path_from_env('KNOWLEDGE_GAME_NOTEBOOK_PATH', USER_DATA_DIR / 'notebook.md')
+NOTEBOOK_TITLE = os.environ.get('KNOWLEDGE_GAME_NOTEBOOK_TITLE', 'Player Notebook')
+NOTEBOOK_HEADING = os.environ.get('KNOWLEDGE_GAME_NOTEBOOK_HEADING', 'Player Profile')
+DAILY_TASKS_PATH = project_path_from_env('KNOWLEDGE_GAME_TASKS_PATH', USER_DATA_DIR / 'daily-tasks.md')
+KNOWLEDGE_STATE_PATH = project_path_from_env('KNOWLEDGE_GAME_KNOWLEDGE_STATE_PATH', USER_DATA_DIR / 'knowledge_state.json')
+DAILY_TASKS_STATE_PATH = project_path_from_env('KNOWLEDGE_GAME_DAILY_TASKS_STATE_PATH', USER_DATA_DIR / 'daily_tasks_state.json')
+
 FPS = 60
 
 # screen

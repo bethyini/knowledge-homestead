@@ -6,7 +6,17 @@ from timer import Timer
 
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self, pos, group, collision_sprites, tree_sprites, interaction, soil_layer, toggle_shop):
+    def __init__(
+            self,
+            pos,
+            group,
+            collision_sprites,
+            tree_sprites,
+            interaction,
+            soil_layer,
+            toggle_shop,
+            knowledge_interact=None,
+            daily_tasks_interact=None):
         super().__init__(group)
 
         self.import_assets()
@@ -52,6 +62,16 @@ class Player(pygame.sprite.Sprite):
             'corn':   0,
             'tomato': 0
         }
+        self.knowledge_inventory = {}
+        self.knowledge_badges = []
+        self.knowledge_xp = 0
+        self.completed_missions = set()
+        self.research_health = 5
+        self.paper_read_dates = set()
+        self.last_daily_check_date = None
+        self.strength = 0
+        self.daily_reward_inventory = {}
+        self.daily_task_reward_dates = set()
         self.seed_inventory = {
             'corn': 5,
             'tomato': 5
@@ -64,6 +84,8 @@ class Player(pygame.sprite.Sprite):
         self.sleep = False
         self.soil_layer = soil_layer
         self.toggle_shop = toggle_shop
+        self.knowledge_interact = knowledge_interact
+        self.daily_tasks_interact = daily_tasks_interact
 
         # sound
         watering_sound_path = get_path('../audio/water.mp3')
@@ -170,11 +192,34 @@ class Player(pygame.sprite.Sprite):
                 collided_interaction_sprite = pygame.sprite.spritecollide(
                     self, self.interaction, False)
                 if collided_interaction_sprite:
-                    if collided_interaction_sprite[0].name == 'Trader':
+                    interaction_name = self.prioritized_interaction_name(collided_interaction_sprite)
+                    if interaction_name == 'Trader':
                         self.toggle_shop()
+                    elif interaction_name == 'DailyDesk':
+                        if self.daily_tasks_interact:
+                            self.daily_tasks_interact()
+                    elif interaction_name == 'ArtifactChest':
+                        if self.knowledge_interact:
+                            self.knowledge_interact(None)
+                    elif interaction_name.startswith('KnowledgePickup:'):
+                        if self.knowledge_interact:
+                            mission_index = int(interaction_name.split(':')[1])
+                            self.knowledge_interact(mission_index)
                     else:
                         self.status = 'left_idle'
                         self.sleep = True
+
+    def prioritized_interaction_name(self, sprites):
+        names = [sprite.name for sprite in sprites]
+        for preferred in ('DailyDesk', 'ArtifactChest', 'Trader', 'Bed'):
+            if preferred in names:
+                return preferred
+
+        for name in names:
+            if name.startswith('KnowledgePickup:'):
+                return name
+
+        return names[0]
 
     def update_timers(self):
         for timer in self.timers.values():
