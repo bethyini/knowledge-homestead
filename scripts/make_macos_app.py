@@ -2,10 +2,9 @@ from pathlib import Path
 import argparse
 import plistlib
 import shutil
-import shlex
-import stat
 import subprocess
 import sys
+from urllib.parse import unquote
 
 
 APP_NAME = 'Scholardew Valley'
@@ -13,10 +12,14 @@ BUNDLE_ID = 'com.bethyini.scholardewvalley'
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ICON = ROOT / 'graphics' / 'ui' / 'app_icon.png'
 DIST_DIR = ROOT / 'dist'
+BUILD_DIR = ROOT / 'build' / 'pyinstaller'
 APP_PATH = DIST_DIR / f'{APP_NAME}.app'
-ICONSET_PATH = DIST_DIR / 'AppIcon.iconset'
-ICNS_PATH = APP_PATH / 'Contents' / 'Resources' / 'AppIcon.icns'
+ICONSET_PATH = BUILD_DIR / 'AppIcon.iconset'
+ICNS_PATH = BUILD_DIR / 'AppIcon.icns'
+HOOKS_DIR = BUILD_DIR / 'hooks'
 USER_APPLICATIONS_DIR = Path.home().joinpath('Applications')
+APP_SUPPORT_DIR = Path.home().joinpath('Library', 'Application Support', APP_NAME)
+DOCK_PLIST = Path.home().joinpath('Library', 'Preferences', 'com.apple.dock.plist')
 
 
 def run(command):
@@ -29,7 +32,7 @@ def make_iconset():
 
     if ICONSET_PATH.exists():
         shutil.rmtree(ICONSET_PATH)
-    ICONSET_PATH.mkdir(parents=True)
+    ICONSET_PATH.mkdir(parents=True, exist_ok=True)
 
     icon_sizes = (
         ('icon_16x16.png', 16),
@@ -46,79 +49,94 @@ def make_iconset():
     for filename, size in icon_sizes:
         run(['sips', '-z', str(size), str(size), str(SOURCE_ICON), '--out', str(ICONSET_PATH / filename)])
 
-    ICNS_PATH.parent.mkdir(parents=True, exist_ok=True)
     run(['iconutil', '-c', 'icns', str(ICONSET_PATH), '-o', str(ICNS_PATH)])
 
 
-def write_info_plist():
-    plist = {
-        'CFBundleDevelopmentRegion': 'en',
+def write_pyinstaller_hooks():
+    HOOKS_DIR.mkdir(parents=True, exist_ok=True)
+    (HOOKS_DIR / 'hook-notebook.py').write_text(
+        "# Scholardew has a local notebook.py module; do not apply Jupyter's notebook hook.\n")
+
+
+def app_info_plist_path(app_path):
+    return app_path / 'Contents' / 'Info.plist'
+
+
+def patch_info_plist(app_path):
+    plist_path = app_info_plist_path(app_path)
+    with plist_path.open('rb') as file:
+        plist = plistlib.load(file)
+    plist.update({
         'CFBundleDisplayName': APP_NAME,
-        'CFBundleExecutable': APP_NAME,
-        'CFBundleIconFile': 'AppIcon',
         'CFBundleIdentifier': BUNDLE_ID,
-        'CFBundleInfoDictionaryVersion': '6.0',
         'CFBundleName': APP_NAME,
-        'CFBundlePackageType': 'APPL',
-        'CFBundleShortVersionString': '0.1.0',
-        'CFBundleVersion': '1',
         'LSMinimumSystemVersion': '10.15',
         'NSHighResolutionCapable': True,
-    }
-    plist_path = APP_PATH / 'Contents' / 'Info.plist'
-    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    })
     with plist_path.open('wb') as file:
         plistlib.dump(plist, file, sort_keys=False)
 
 
-def write_launcher():
-    executable_path = APP_PATH / 'Contents' / 'MacOS' / APP_NAME
-    executable_path.parent.mkdir(parents=True, exist_ok=True)
-    command_path = APP_PATH / 'Contents' / 'Resources' / 'run_scholardew.command'
-    command_path.parent.mkdir(parents=True, exist_ok=True)
-    pid_file = '${TMPDIR:-/tmp}/scholardew-valley.pid'
-    command = f'''#!/bin/zsh
-PID_FILE="{pid_file}"
+def pyinstaller_available():
+    result = subprocess.run(
+        [sys.executable, '-m', 'PyInstaller', '--version'],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False)
+    return result.returncode == 0
 
-if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-  echo "Scholardew Valley is already running."
-  exit 0
-fi
 
-echo $$ > "$PID_FILE"
-trap 'rm -f "$PID_FILE"' EXIT
-
-cd {shlex.quote(str(ROOT))} || exit 1
-if [ ! -x .venv/bin/python ]; then
-  echo "Python environment not found. Run setup from the Scholardew Valley repo, then try again."
-  read -k 1 '?Press any key to close.'
-  exit 1
-fi
-
-.venv/bin/python code/main.py
-'''
-    command_path.write_text(command)
-    command_mode = command_path.stat().st_mode
-    command_path.chmod(command_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-    launcher = f'''#!/bin/zsh
-APP_CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
-/usr/bin/open "$APP_CONTENTS/Resources/run_scholardew.command"
-'''
-    executable_path.write_text(launcher)
-    mode = executable_path.stat().st_mode
-    executable_path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+def add_data_arg(source, destination):
+    return f'{source}:{destination}'
 
 
 def make_app():
+    if sys.platform != 'darwin':
+        raise SystemExit('This launcher builder only supports macOS.')
+    if not pyinstaller_available():
+        raise SystemExit('Missing PyInstaller. Install it with: python -m pip install pyinstaller')
+
     if APP_PATH.exists():
         shutil.rmtree(APP_PATH)
-    (APP_PATH / 'Contents' / 'Resources').mkdir(parents=True)
-    write_info_plist()
-    write_launcher()
+    if BUILD_DIR.exists():
+        shutil.rmtree(BUILD_DIR)
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+
     make_iconset()
-    shutil.rmtree(ICONSET_PATH)
-    run(['touch', str(APP_PATH)])
+    write_pyinstaller_hooks()
+    command = [
+        sys.executable,
+        '-m',
+        'PyInstaller',
+        '--noconfirm',
+        '--windowed',
+        '--name',
+        APP_NAME,
+        '--icon',
+        str(ICNS_PATH),
+        '--distpath',
+        str(DIST_DIR),
+        '--workpath',
+        str(BUILD_DIR),
+        '--specpath',
+        str(BUILD_DIR),
+        '--additional-hooks-dir',
+        str(HOOKS_DIR),
+        '--add-data',
+        add_data_arg(ROOT / 'audio', 'audio'),
+        '--add-data',
+        add_data_arg(ROOT / 'data' / 'Tilesets', 'data/Tilesets'),
+        '--add-data',
+        add_data_arg(ROOT / 'data' / 'map.tmx', 'data'),
+        '--add-data',
+        add_data_arg(ROOT / 'font', 'font'),
+        '--add-data',
+        add_data_arg(ROOT / 'graphics', 'graphics'),
+        str(ROOT / 'code' / 'main.py'),
+    ]
+    run([str(item) for item in command])
+    patch_info_plist(APP_PATH)
+    seed_app_support_data()
     return APP_PATH
 
 
@@ -140,14 +158,92 @@ def copy_to_applications(app_path):
     return copy_app(app_path, USER_APPLICATIONS_DIR)
 
 
+def seed_app_support_data():
+    source = ROOT / 'data' / 'user'
+    destination = APP_SUPPORT_DIR / 'data' / 'user'
+    if destination.exists() or not source.exists():
+        return None
+    shutil.copytree(source, destination)
+    return destination
+
+
+def dock_item_label(item):
+    return item.get('tile-data', {}).get('file-label', '')
+
+
+def dock_item_url(item):
+    return item.get('tile-data', {}).get('file-data', {}).get('_CFURLString', '')
+
+
+def dock_url_path(url):
+    if url.startswith('file://'):
+        return unquote(url[len('file://'):]).rstrip('/')
+    return unquote(url).rstrip('/')
+
+
+def is_stale_python_launcher(item):
+    path = dock_url_path(dock_item_url(item))
+    return (
+        dock_item_label(item) == 'Python'
+        and path.endswith('/Python.app')
+        and '/CommandLineTools/Library/Frameworks/Python3.framework/' in path
+    )
+
+
+def is_scholardew_entry(item):
+    path = dock_url_path(dock_item_url(item))
+    return dock_item_label(item) == APP_NAME or path.endswith(f'/{APP_NAME}.app')
+
+
+def prune_stale_dock_entries(app_path):
+    if not DOCK_PLIST.exists():
+        return False, False
+
+    with DOCK_PLIST.open('rb') as file:
+        dock = plistlib.load(file)
+
+    target_path = str(app_path.resolve()).rstrip('/')
+    filtered_apps = []
+    changed = False
+    has_target = False
+
+    for item in dock.get('persistent-apps', []):
+        path = dock_url_path(dock_item_url(item))
+        if is_stale_python_launcher(item):
+            changed = True
+            continue
+        if is_scholardew_entry(item):
+            if path == target_path and not has_target:
+                filtered_apps.append(item)
+                has_target = True
+            else:
+                changed = True
+            continue
+        filtered_apps.append(item)
+
+    if changed:
+        dock['persistent-apps'] = filtered_apps
+        with DOCK_PLIST.open('wb') as file:
+            plistlib.dump(dock, file, sort_keys=False)
+
+    return has_target, changed
+
+
 def pin_to_dock(app_path):
+    has_target, changed = prune_stale_dock_entries(app_path)
+    if has_target:
+        if changed:
+            run(['killall', 'Dock'])
+        return False
+
     dock_entry = subprocess.run(
         ['defaults', 'read', 'com.apple.dock', 'persistent-apps'],
         capture_output=True,
         text=True,
         check=False)
     app_path_text = str(app_path)
-    if app_path_text in dock_entry.stdout:
+    app_uri = app_path.resolve().as_uri()
+    if app_path_text in dock_entry.stdout or app_uri in dock_entry.stdout or APP_NAME in dock_entry.stdout:
         return False
 
     tile = (
@@ -172,14 +268,11 @@ def pin_to_dock(app_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Build a clickable macOS app launcher for Scholardew Valley.')
+    parser = argparse.ArgumentParser(description='Build a native macOS app bundle for Scholardew Valley.')
     parser.add_argument('--desktop', action='store_true', help='Also copy the app bundle to ~/Desktop.')
     parser.add_argument('--applications', action='store_true', help='Also copy the app bundle to ~/Applications.')
     parser.add_argument('--dock', action='store_true', help='Pin the ~/Applications app bundle to the Dock.')
     args = parser.parse_args()
-
-    if sys.platform != 'darwin':
-        raise SystemExit('This launcher builder only supports macOS.')
 
     app_path = make_app()
     print(app_path)

@@ -1,6 +1,7 @@
 import os
 import pygame
 from settings import *
+from support import get_path
 
 
 class Overlay:
@@ -11,9 +12,7 @@ class Overlay:
         self.player = player
 
         # imports
-        absolute_path = os.path.dirname(__file__)
-        relative_path = '../graphics/overlay/'
-        overlay_path = os.path.join(absolute_path, relative_path)
+        overlay_path = get_path('../graphics/overlay/')
         self.tools_surf = {tool: pygame.image.load(
             f'{overlay_path}{tool}.png').convert_alpha() for tool in player.tools}
         self.seeds_surf = {seed: pygame.image.load(

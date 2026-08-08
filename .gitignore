@@ -3,6 +3,7 @@
 /.pytest_cache
 /.env
 /.venv
+/build
 /dist
 /data/*_state.json
 /data/user/*

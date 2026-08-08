@@ -29,9 +29,9 @@ To create a persistent clickable app icon, build the local macOS app bundle:
 python scripts/make_macos_app.py --desktop --applications --dock
 ```
 
-This creates `dist/Scholardew Valley.app`, copies it to your Desktop, installs a stable copy in `~/Applications`, and pins the app to your Dock. Double-click the app icon to launch the game. The app bundle points at the current clone, so rebuild it if you move the repo.
+This creates a native `dist/Scholardew Valley.app`, copies it to your Desktop, installs a stable copy in `~/Applications`, and pins the app to your Dock. Double-click the app icon to launch the game. Rebuild it after code or dependency changes.
 
-On macOS, the launcher opens the game through Terminal so it can access the local virtual environment and game files without extra privacy permissions.
+The macOS app stores save data in `~/Library/Application Support/Scholardew Valley`. To use an OpenAI API key with the app bundle, put a `.env` file in that folder.
 
 ## Controls
 

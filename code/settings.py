@@ -1,9 +1,10 @@
 import os
+import sys
 from pathlib import Path
 
 from pygame.math import Vector2
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 APP_NAME = os.environ.get('KNOWLEDGE_GAME_APP_NAME', 'Scholardew Valley')
 WINDOW_TITLE = APP_NAME
 
@@ -14,8 +15,16 @@ def project_path_from_env(name, default):
     return path if path.is_absolute() else PROJECT_ROOT / path
 
 
-USER_DATA_DIR = project_path_from_env('KNOWLEDGE_GAME_DATA_DIR', PROJECT_ROOT / 'data' / 'user')
-ENV_PATH = project_path_from_env('KNOWLEDGE_GAME_ENV_PATH', PROJECT_ROOT / '.env')
+if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
+    DEFAULT_SUPPORT_DIR = Path.home().joinpath('Library', 'Application Support', APP_NAME)
+    DEFAULT_USER_DATA_DIR = DEFAULT_SUPPORT_DIR / 'data' / 'user'
+    DEFAULT_ENV_PATH = DEFAULT_SUPPORT_DIR / '.env'
+else:
+    DEFAULT_USER_DATA_DIR = PROJECT_ROOT / 'data' / 'user'
+    DEFAULT_ENV_PATH = PROJECT_ROOT / '.env'
+
+USER_DATA_DIR = project_path_from_env('KNOWLEDGE_GAME_DATA_DIR', DEFAULT_USER_DATA_DIR)
+ENV_PATH = project_path_from_env('KNOWLEDGE_GAME_ENV_PATH', DEFAULT_ENV_PATH)
 NOTEBOOK_PATH = project_path_from_env('KNOWLEDGE_GAME_NOTEBOOK_PATH', USER_DATA_DIR / 'notebook.md')
 NOTEBOOK_TITLE = os.environ.get('KNOWLEDGE_GAME_NOTEBOOK_TITLE', 'Player Notebook')
 NOTEBOOK_HEADING = os.environ.get('KNOWLEDGE_GAME_NOTEBOOK_HEADING', 'Player Profile')

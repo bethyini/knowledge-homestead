@@ -20,7 +20,7 @@ DENY_PATTERNS = (
     re.compile(r'OPENAI_API_KEY=sk-[A-Za-z0-9_-]{12,}'),
     re.compile(r'sk-proj-[A-Za-z0-9_-]{12,}'),
 )
-IGNORED_DIRS = {'.git', '.venv', '__pycache__'}
+IGNORED_DIRS = {'.git', '.venv', '__pycache__', 'build', 'dist'}
 IGNORED_FILES = {'.env', 'check_public_release.py'}
 
 

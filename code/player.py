@@ -124,11 +124,7 @@ class Player(pygame.sprite.Sprite):
         }
 
         for animation in self.animations.keys():
-            absolute_path = os.path.dirname(__file__)
-            relative_path = '../graphics/character/' + animation
-            full_path = os.path.join(absolute_path, relative_path)
-
-            self.animations[animation] = import_folder(full_path)
+            self.animations[animation] = import_folder(get_path('../graphics/character/' + animation))
 
     def animate(self, dt):
         self.frame_index += 4 * dt
