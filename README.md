@@ -112,6 +112,15 @@ python scripts/make_macos_app.py --desktop --applications --dock
 
 Users on older versions will see the in-game update board the next time they launch the game with internet access.
 
+## Reward Scale
+
+Rewards use fixed tiers rather than per-question formulas:
+
+- Field-note artifact: `25 XP` and `10g`
+- Full paper mission: `100 XP` and `50g`
+
+One full paper mission is one clean field-level step because field levels are spaced every `100 XP`.
+
 ## Tailoring Interests
 
 The public default starts with three paper missions: one BCI paper, one computational neuroscience paper, and one protein-design paper. The quickest way to tailor the game is to edit missions in `code/knowledge.py`. Each `Mission(...)` defines the paper/topic, prompt, facts the grader checks, reward item, field badge, XP, gold, artifact description, and optional paper questions.

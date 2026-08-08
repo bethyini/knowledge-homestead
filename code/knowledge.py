@@ -39,6 +39,10 @@ STARTER_MISSION_KEYS = (
     'handwriting-brain-to-text',
     'rfdiffusion',
 )
+REWARD_TIERS = {
+    'field_note': {'xp': 25, 'gold': 10},
+    'paper_mission': {'xp': 100, 'gold': 50},
+}
 
 
 def load_env_file(path=ENV_PATH):
@@ -65,15 +69,15 @@ def load_env_file(path=ENV_PATH):
 load_env_file()
 
 
-def reward_xp(required_hits, has_questions=False):
-    base = 20 + required_hits * 8
-    if has_questions:
-        base += 25
-    return base
+def reward_xp(_required_hits, has_questions=False):
+    tier = 'paper_mission' if has_questions else 'field_note'
+    return REWARD_TIERS[tier]['xp']
 
 
 def reward_gold(xp):
-    return max(15, round(xp * 0.6 / 5) * 5)
+    if xp >= REWARD_TIERS['paper_mission']['xp']:
+        return REWARD_TIERS['paper_mission']['gold']
+    return REWARD_TIERS['field_note']['gold']
 
 
 @dataclass(frozen=True)
