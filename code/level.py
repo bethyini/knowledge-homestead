@@ -332,6 +332,12 @@ class Level:
         self.overlay.display()
         if self.knowledge:
             self.knowledge.display_hud()
+            other_panel_active = (
+                self.shop_active or
+                (self.notebook and self.notebook.active) or
+                (self.daily_tasks and self.daily_tasks.active))
+            if not other_panel_active:
+                self.knowledge.activate_update_popup_if_ready()
         if self.notebook:
             self.notebook.display_prompt()
         if self.daily_tasks:
@@ -339,12 +345,14 @@ class Level:
         if self.raining and not self.shop_active:
             self.rain.update()
         self.sky.display(dt)
-        if self.knowledge:
+        if self.knowledge and not self.knowledge.has_modal_popup():
             self.knowledge.display()
         if self.notebook:
             self.notebook.display()
         if self.daily_tasks:
             self.daily_tasks.display()
+        if self.knowledge and self.knowledge.has_modal_popup():
+            self.knowledge.display()
 
         # transition overlay
         if self.player.sleep:

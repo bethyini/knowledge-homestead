@@ -3257,7 +3257,6 @@ class KnowledgeJournal:
             self.draw_welcome_popup()
             return
 
-        self.activate_update_popup_if_ready()
         if self.update_popup_active:
             self.draw_update_popup()
             return
