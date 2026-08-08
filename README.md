@@ -2,8 +2,6 @@
 
 Knowledge Homestead is a desktop Pygame learning game built on top of the open-source Pydew Valley farming prototype. You walk around a small farm, open artifacts, answer question prompts, collect knowledge items, keep a notebook, and maintain daily tasks for small in-game rewards.
 
-The project is set up to be safe for a public GitHub repo: local save files, notebooks, task lists, downloaded papers, virtual environments, and API keys are ignored by git.
-
 ## Features
 
 - Arrow-key avatar movement in a Stardew-like world
