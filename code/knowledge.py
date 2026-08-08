@@ -31,6 +31,12 @@ MAX_ANSWER_CHARS = 6000
 LLM_GRADER_TIMEOUT = 8
 SUBMIT_KEYS = (pygame.K_RETURN, pygame.K_KP_ENTER)
 SUBMIT_MODS = pygame.KMOD_CTRL | pygame.KMOD_META
+API_KEY_MISSING_MESSAGE = 'API key unavailable: add API key first'
+STARTER_MISSION_KEYS = (
+    'neural-population-dynamics-reaching',
+    'handwriting-brain-to-text',
+    'rfdiffusion',
+)
 
 
 def load_env_file(path=ENV_PATH):
@@ -89,6 +95,10 @@ class GradeResult:
     grader: str
 
 
+class GraderUnavailable(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class Mission:
     key: str
@@ -106,7 +116,7 @@ class Mission:
     questions: Tuple[PaperQuestion, ...] = ()
 
 
-MISSIONS = (
+MISSION_LIBRARY = (
     Mission(
         key='candlefish',
         title='Candlefish Field Note',
@@ -1453,6 +1463,15 @@ MISSIONS = (
     ),
 )
 
+MISSIONS = tuple(
+    mission for mission in MISSION_LIBRARY
+    if mission.key in STARTER_MISSION_KEYS
+)
+
+if len(MISSIONS) != len(STARTER_MISSION_KEYS):
+    missing_keys = set(STARTER_MISSION_KEYS) - {mission.key for mission in MISSIONS}
+    raise RuntimeError(f'Missing starter mission definitions: {sorted(missing_keys)}')
+
 
 FIELD_PALETTES = {
     'Ecology': {
@@ -1914,6 +1933,7 @@ class KnowledgeJournal:
         self.grading = False
         self.grade_queue = Queue()
         self.submit_button_rect = None
+        self.welcome_button_rect = None
         self.answer = ''
         self.messages = {}
         self.feedback = {}
@@ -1925,6 +1945,7 @@ class KnowledgeJournal:
         self.ensure_player_state()
         self.load_daily_state()
         self.apply_daily_penalty()
+        self.welcome_active = not self.player.welcome_seen
 
     def make_slot(self):
         surf = pygame.Surface((54, 54), pygame.SRCALPHA)
@@ -2421,6 +2442,8 @@ class KnowledgeJournal:
             self.player.last_daily_check_date = None
         if not hasattr(self.player, 'daily_reward_inventory'):
             self.player.daily_reward_inventory = {}
+        if not hasattr(self.player, 'welcome_seen'):
+            self.player.welcome_seen = False
 
     def load_daily_state(self):
         if not STATE_PATH.exists():
@@ -2441,6 +2464,7 @@ class KnowledgeJournal:
         self.player.research_health = int(data.get('research_health', self.player.research_health))
         self.player.paper_read_dates = set(data.get('paper_read_dates', self.player.paper_read_dates))
         self.player.last_daily_check_date = data.get('last_daily_check_date', self.player.last_daily_check_date)
+        self.player.welcome_seen = bool(data.get('welcome_seen', self.player.welcome_seen))
         self.reconcile_progress_state()
 
     def save_daily_state(self):
@@ -2454,6 +2478,7 @@ class KnowledgeJournal:
             'research_health': self.player.research_health,
             'paper_read_dates': sorted(self.player.paper_read_dates),
             'last_daily_check_date': self.player.last_daily_check_date,
+            'welcome_seen': self.player.welcome_seen,
         }
         try:
             STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -2678,6 +2703,14 @@ class KnowledgeJournal:
 
         return message, detail
 
+    def is_blocking(self):
+        return self.welcome_active or self.active
+
+    def dismiss_welcome(self):
+        self.welcome_active = False
+        self.player.welcome_seen = True
+        self.save_daily_state()
+
     def is_complete_index(self, index):
         return self.missions[index].key in self.player.completed_missions
 
@@ -2690,6 +2723,9 @@ class KnowledgeJournal:
             self.select_mission(self.first_unfinished_mission_index(), keep_answer=False)
 
     def handle_event(self, event):
+        if self.welcome_active:
+            return self.handle_welcome_event(event)
+
         if event.type == pygame.MOUSEBUTTONDOWN:
             return self.handle_mouse_event(event)
 
@@ -2747,6 +2783,18 @@ class KnowledgeJournal:
 
         if event.key in (pygame.K_RETURN, pygame.K_SPACE):
             self.open_mission(self.index)
+
+        return True
+
+    def handle_welcome_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if self.welcome_button_rect and self.welcome_button_rect.collidepoint(event.pos):
+                self.dismiss_welcome()
+            return True
+
+        if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE, pygame.K_ESCAPE):
+            self.dismiss_welcome()
+            return True
 
         return True
 
@@ -2832,6 +2880,10 @@ class KnowledgeJournal:
             self.set_feedback('Write a few facts first, then submit.')
             return
 
+        if not os.environ.get('OPENAI_API_KEY', '').strip():
+            self.set_feedback(API_KEY_MISSING_MESSAGE)
+            return
+
         self.grading = True
         self.set_feedback('Grading your answer...', 'Please wait; the result will save automatically.')
         Thread(
@@ -2861,20 +2913,19 @@ class KnowledgeJournal:
             return
 
         if error:
-            fallback_hits, fallback_missing = self.local_grade_answer(mission, submitted_answer)
-            result = GradeResult(
-                passed=len(fallback_hits) >= mission.required_hits,
-                hits=tuple(fallback_hits),
-                missing=tuple(fallback_missing),
-                response='The online grader had an error, so the local grader checked this answer.',
-                grader='Local grader')
+            self.set_feedback(API_KEY_MISSING_MESSAGE)
+            return
 
         self.apply_grade_result(mission, submitted_answer, result)
 
     def submit_answer(self):
         mission = self.missions[self.index]
-        result = self.grade_answer(mission, self.answer)
         submitted_answer = self.answer
+        try:
+            result = self.grade_answer(mission, submitted_answer)
+        except GraderUnavailable:
+            self.set_feedback(API_KEY_MISSING_MESSAGE)
+            return
         self.apply_grade_result(mission, submitted_answer, result)
 
     def apply_grade_result(self, mission, submitted_answer, result):
@@ -2926,22 +2977,7 @@ class KnowledgeJournal:
                     detail)
 
     def grade_answer(self, mission, answer):
-        llm_result = self.grade_answer_with_llm(mission, answer)
-        if llm_result:
-            return llm_result
-
-        hits, missing = self.local_grade_answer(mission, answer)
-        passed = len(hits) >= mission.required_hits
-        if passed:
-            response = 'Good answer. You covered enough key facts.'
-        else:
-            response = 'Try adding: ' + ', '.join(missing[:3])
-        return GradeResult(
-            passed=passed,
-            hits=tuple(hits),
-            missing=tuple(missing),
-            response=response,
-            grader='Local grader')
+        return self.grade_answer_with_llm(mission, answer)
 
     def local_grade_answer(self, mission, answer):
         normalized = ' '.join(answer.lower().split())
@@ -2957,9 +2993,9 @@ class KnowledgeJournal:
         return hits, missing
 
     def grade_answer_with_llm(self, mission, answer):
-        api_key = os.environ.get('OPENAI_API_KEY')
+        api_key = os.environ.get('OPENAI_API_KEY', '').strip()
         if not api_key:
-            return None
+            raise GraderUnavailable(API_KEY_MISSING_MESSAGE)
 
         answer = answer.strip()
         if not answer:
@@ -3030,11 +3066,11 @@ class KnowledgeJournal:
             with urllib.request.urlopen(request, timeout=LLM_GRADER_TIMEOUT) as response:
                 payload = json.loads(response.read().decode('utf-8'))
             parsed = self.parse_llm_grade(payload)
-        except (OSError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, KeyError, TypeError):
-            return None
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, KeyError, TypeError) as error:
+            raise GraderUnavailable(API_KEY_MISSING_MESSAGE) from error
 
         if not parsed:
-            return None
+            raise GraderUnavailable(API_KEY_MISSING_MESSAGE)
 
         hits = self.filter_fact_labels(parsed.get('hits', ()), mission)
         if not hits:
@@ -3138,6 +3174,10 @@ class KnowledgeJournal:
             self.display_surface.blit(amount_surf, amount_surf.get_rect(center=amount_bg.center))
 
     def display(self):
+        if self.welcome_active:
+            self.draw_welcome_popup()
+            return
+
         if not self.active:
             return
 
@@ -3164,6 +3204,96 @@ class KnowledgeJournal:
         else:
             self.draw_mission_list(left)
             self.draw_mission_detail(right)
+
+    def draw_welcome_popup(self):
+        self.submit_button_rect = None
+
+        shade = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        shade.fill((31, 22, 15, 38))
+        self.display_surface.blit(shade, (0, 0))
+
+        slab = pygame.Rect(210, 76, SCREEN_WIDTH - 420, SCREEN_HEIGHT - 152)
+        pygame.draw.rect(self.display_surface, (73, 45, 29), slab.move(7, 8), border_radius=8)
+        pygame.draw.rect(self.display_surface, (191, 132, 72), slab, border_radius=8)
+        pygame.draw.rect(self.display_surface, (91, 55, 35), slab, 4, border_radius=8)
+
+        for plank_y in (slab.top + 68, slab.top + 142, slab.bottom - 94):
+            pygame.draw.line(
+                self.display_surface,
+                (142, 91, 50),
+                (slab.left + 16, plank_y),
+                (slab.right - 16, plank_y),
+                2)
+
+        for knot in ((slab.left + 82, slab.top + 30), (slab.right - 136, slab.top + 96), (slab.left + 154, slab.bottom - 66)):
+            pygame.draw.ellipse(self.display_surface, (146, 90, 48), (*knot, 48, 18))
+            pygame.draw.ellipse(self.display_surface, (111, 67, 40), (knot[0] + 10, knot[1] + 4, 26, 8), 2)
+
+        inset = slab.inflate(-58, -54)
+        pygame.draw.rect(self.display_surface, (248, 233, 196), inset, border_radius=6)
+        pygame.draw.rect(self.display_surface, (112, 70, 43), inset, 3, border_radius=6)
+
+        title = self.font.render('Welcome to Scholardew Valley', False, INK)
+        self.display_surface.blit(title, (inset.left + 22, inset.top + 18))
+
+        y = inset.top + 70
+        intro = (
+            'Collect knowledge artifacts by reading papers and answering the mission questions. '
+            'The grader needs an API key before it can score answers.'
+        )
+        y = self.draw_wrapped_clipped_top(
+            intro,
+            self.small_font,
+            MUTED,
+            inset.left + 22,
+            y,
+            inset.width - 44,
+            y + 62)
+        y += 14
+
+        notes = (
+            ('API key', 'Copy .env.example to .env, set OPENAI_API_KEY, then restart.'),
+            ('Daily paper', 'A paper mission can appear each day; reading papers protects Research HP.'),
+            ('Daily tasks', "Finish today's task list by midnight: +1 Strength and one Strawberry item."),
+            ('Journal/chest', 'Press J for missions. Open the chest to review artifacts, rewards, and saved answers.'),
+            ('Notebook', 'Press N to write durable notes or facts you want the game to remember.'),
+        )
+
+        row_left = inset.left + 20
+        row_width = inset.width - 40
+        row_height = 68
+        for index, (heading, body) in enumerate(notes, start=1):
+            row = pygame.Rect(row_left, y, row_width, row_height)
+            color = (238, 219, 174) if index % 2 else (244, 226, 184)
+            pygame.draw.rect(self.display_surface, color, row, border_radius=4)
+            pygame.draw.rect(self.display_surface, (188, 142, 82), row, 1, border_radius=4)
+
+            number_rect = pygame.Rect(row.left + 12, row.top + 12, 30, 30)
+            pygame.draw.rect(self.display_surface, (207, 153, 74), number_rect, border_radius=4)
+            pygame.draw.rect(self.display_surface, (112, 70, 43), number_rect, 2, border_radius=4)
+            number_surf = self.tiny_font.render(str(index), False, INK)
+            self.display_surface.blit(number_surf, number_surf.get_rect(center=number_rect.center))
+
+            heading_surf = self.small_font.render(heading, False, ACCENT)
+            self.display_surface.blit(heading_surf, (row.left + 54, row.top + 7))
+            self.draw_wrapped_clipped_top(
+                body,
+                self.tiny_font,
+                INK,
+                row.left + 54,
+                row.top + 32,
+                row.width - 72,
+                row.bottom - 6)
+            y += row_height + 8
+
+        self.welcome_button_rect = pygame.Rect(slab.right - 206, slab.bottom - 68, 166, 38)
+        pygame.draw.rect(self.display_surface, (207, 153, 74), self.welcome_button_rect, border_radius=5)
+        pygame.draw.rect(self.display_surface, (54, 35, 26), self.welcome_button_rect, 2, border_radius=5)
+        button_label = self.small_font.render('Start', False, INK)
+        self.display_surface.blit(button_label, button_label.get_rect(center=self.welcome_button_rect.center))
+
+        hint = self.tiny_font.render('Enter / Space / Esc also closes this once.', False, (92, 76, 60))
+        self.display_surface.blit(hint, (inset.left + 22, slab.bottom - 58))
 
     def draw_collection_list(self, rect):
         pygame.draw.rect(self.display_surface, (232, 204, 151), rect, border_radius=6)
@@ -3222,6 +3352,9 @@ class KnowledgeJournal:
         record = self.player.artifact_records.get(mission.key, {})
         response = self.player.mission_responses.get(mission.key, {})
         collected_at = record.get('collected_at', 'Before chest log')
+        footer_top = rect.bottom - 54
+        grader_top = rect.bottom - 122
+        content_bottom = grader_top - 14 if response.get('grader_response') else footer_top - 14
         y = rect.top + 18
 
         self.draw_item_slot(pygame.Rect(rect.left + 18, y + 2, 58, 58), mission.reward_item)
@@ -3239,26 +3372,36 @@ class KnowledgeJournal:
         self.display_surface.blit(desc_header, (rect.left + 18, y))
         y += 24
         description = mission.artifact_description or mission.prompt
-        y = self.draw_wrapped(description, self.small_font, INK, rect.left + 18, y, rect.width - 36)
+        description_bottom = min(y + 92, content_bottom - 92)
+        if description_bottom > y + self.small_font.get_height():
+            y = self.draw_wrapped_clipped_top(
+                description,
+                self.small_font,
+                INK,
+                rect.left + 18,
+                y,
+                rect.width - 36,
+                description_bottom)
         y += 14
 
-        pygame.draw.line(self.display_surface, (176, 132, 76), (rect.left + 18, y), (rect.right - 18, y), 1)
-        y += 14
-        answer_header = self.tiny_font.render('Your Answer', False, INK)
-        self.display_surface.blit(answer_header, (rect.left + 18, y))
-        y += 24
+        if y < content_bottom - 44:
+            pygame.draw.line(self.display_surface, (176, 132, 76), (rect.left + 18, y), (rect.right - 18, y), 1)
+            y += 14
+            answer_header = self.tiny_font.render('Your Answer', False, INK)
+            self.display_surface.blit(answer_header, (rect.left + 18, y))
+            y += 24
 
-        answer_text = response.get('answer', '').strip()
-        if answer_text:
-            y = self.draw_wrapped_clipped(answer_text, self.tiny_font, INK, rect.left + 18, y, rect.width - 36, rect.bottom - 128)
-        else:
-            y = self.draw_wrapped('No saved answer for this artifact yet.', self.tiny_font, MUTED, rect.left + 18, y, rect.width - 36)
+            answer_text = response.get('answer', '').strip()
+            if answer_text:
+                y = self.draw_wrapped_clipped(answer_text, self.tiny_font, INK, rect.left + 18, y, rect.width - 36, content_bottom)
+            else:
+                y = self.draw_wrapped_clipped_top('No saved answer for this artifact yet.', self.tiny_font, MUTED, rect.left + 18, y, rect.width - 36, content_bottom)
 
         grader_text = response.get('grader_response', '').strip()
         if grader_text:
             if grader_text.startswith('Grader:'):
                 grader_text = grader_text.split(':', 1)[1].strip()
-            feedback_top = max(y + 14, rect.bottom - 110)
+            feedback_top = grader_top
             pygame.draw.line(self.display_surface, (176, 132, 76), (rect.left + 18, feedback_top - 8), (rect.right - 18, feedback_top - 8), 1)
             grader_header = self.tiny_font.render('Grader', False, INK)
             self.display_surface.blit(grader_header, (rect.left + 18, feedback_top))
@@ -3269,7 +3412,7 @@ class KnowledgeJournal:
                 rect.left + 18,
                 feedback_top + 24,
                 rect.width - 36,
-                rect.bottom - 56)
+                footer_top - 4)
 
         footer = 'Up/Down artifacts | Esc close'
         footer_surf = self.tiny_font.render(footer, False, MUTED)
@@ -3320,8 +3463,14 @@ class KnowledgeJournal:
 
         inventory = list(self.chest_inventory().items())
         if not inventory:
-            empty = self.tiny_font.render('Earn icons by answering missions or finishing daily tasks.', False, MUTED)
-            self.display_surface.blit(empty, (chest_rect.left + 12, chest_rect.top + 48))
+            self.draw_wrapped_clipped_top(
+                'Earn icons by answering missions or finishing daily tasks.',
+                self.tiny_font,
+                MUTED,
+                chest_rect.left + 12,
+                chest_rect.top + 48,
+                chest_rect.width - 24,
+                chest_rect.bottom - 10)
             return
 
         x = chest_rect.left + 12
@@ -3339,6 +3488,10 @@ class KnowledgeJournal:
         pygame.draw.rect(self.display_surface, (248, 233, 196), rect, border_radius=6)
         pygame.draw.rect(self.display_surface, PANEL_DARK, rect, 2, border_radius=6)
 
+        footer = 'Up/Down select | Enter/Cmd-S submit | E response | Esc close'
+        footer_y = rect.bottom - 44
+        status_rect = pygame.Rect(rect.left + 18, rect.bottom - 108, rect.width - 36, 54)
+        content_bottom = status_rect.top - 12
         y = rect.top + 18
         for line in self.wrap_text(mission.title, self.font, rect.width - 36):
             surf = self.font.render(line, False, INK)
@@ -3384,6 +3537,9 @@ class KnowledgeJournal:
             y += 32
 
             input_height = 84 if compact_answer else 150
+            input_height = max(48, min(input_height, content_bottom - y))
+            if y + input_height > content_bottom:
+                y = max(rect.top + 18, content_bottom - input_height)
             input_rect = pygame.Rect(rect.left + 18, y, rect.width - 36, input_height)
             pygame.draw.rect(self.display_surface, (255, 247, 221), input_rect, border_radius=5)
             pygame.draw.rect(self.display_surface, PANEL_DARK, input_rect, 2, border_radius=5)
@@ -3397,20 +3553,12 @@ class KnowledgeJournal:
                 input_rect.top + 10,
                 input_rect.width - 24,
                 input_rect.bottom - 8)
-            y = input_rect.bottom + 14
-            self.submit_button_rect = pygame.Rect(rect.right - 174, y, 156, 36)
-            button_color = (196, 154, 85) if not self.grading else (164, 140, 100)
-            pygame.draw.rect(self.display_surface, button_color, self.submit_button_rect, border_radius=5)
-            pygame.draw.rect(self.display_surface, PANEL_DARK, self.submit_button_rect, 2, border_radius=5)
-            label_text = 'Grading...' if self.grading else 'Submit'
-            button_label = self.small_font.render(label_text, False, INK)
-            self.display_surface.blit(button_label, button_label.get_rect(center=self.submit_button_rect.center))
-            y = self.submit_button_rect.bottom + 10
+            y = input_rect.bottom + 10
         else:
             expanded = mission.key in self.expanded_responses
             if not expanded:
                 facts = f'Grader wants about {mission.required_hits} of {len(mission.key_facts)} key facts.'
-                y = self.draw_wrapped(facts, self.small_font, MUTED, rect.left + 18, y, rect.width - 36)
+                y = self.draw_wrapped_clipped_top(facts, self.small_font, MUTED, rect.left + 18, y, rect.width - 36, content_bottom)
                 y += 8
             if mission.key in self.player.mission_responses:
                 response_label = 'Hide response' if mission.key in self.expanded_responses else 'Press E to review your response'
@@ -3418,19 +3566,37 @@ class KnowledgeJournal:
                 self.display_surface.blit(response_surf, (rect.left + 18, y))
                 y += 26
                 if mission.key in self.expanded_responses:
-                    y = self.draw_response_panel(mission, rect.left + 18, y, rect.width - 36, rect.bottom - 58)
+                    y = self.draw_response_panel(mission, rect.left + 18, y, rect.width - 36, content_bottom)
                     y += 10
 
-        message_color = WARNING if 'needs' in message or 'Try' in detail else ACCENT
-        message_floor = rect.bottom - 92
-        if y <= message_floor:
-            y = self.draw_wrapped(message, self.small_font, message_color, rect.left + 18, y, rect.width - 36)
-            if detail:
-                self.draw_wrapped(detail, self.tiny_font, MUTED, rect.left + 18, y + 4, rect.width - 36)
-
-        footer = 'Up/Down select | Enter/Cmd-S submit | E response | Esc close'
+        self.draw_status_bar(status_rect, message, detail, self.answer_mode)
         footer_surf = self.tiny_font.render(footer, False, MUTED)
-        self.display_surface.blit(footer_surf, (rect.left + 18, rect.bottom - 44))
+        self.display_surface.blit(footer_surf, (rect.left + 18, footer_y))
+
+    def draw_status_bar(self, rect, message, detail='', include_submit=False):
+        pygame.draw.rect(self.display_surface, (232, 217, 171), rect, border_radius=5)
+        pygame.draw.rect(self.display_surface, (176, 132, 76), rect, 2, border_radius=5)
+
+        text_width = rect.width - 20
+        if include_submit:
+            self.submit_button_rect = pygame.Rect(rect.right - 164, rect.top + 9, 146, 36)
+            text_width = self.submit_button_rect.left - rect.left - 16
+            button_color = (196, 154, 85) if not self.grading else (164, 140, 100)
+            pygame.draw.rect(self.display_surface, button_color, self.submit_button_rect, border_radius=5)
+            pygame.draw.rect(self.display_surface, PANEL_DARK, self.submit_button_rect, 2, border_radius=5)
+            label_text = 'Grading...' if self.grading else 'Submit'
+            button_label = self.small_font.render(label_text, False, INK)
+            self.display_surface.blit(button_label, button_label.get_rect(center=self.submit_button_rect.center))
+
+        message_color = WARNING if self.is_warning_feedback(message, detail) else ACCENT
+        y = rect.top + 7
+        y = self.draw_wrapped_clipped_top(message, self.tiny_font, message_color, rect.left + 10, y, text_width, rect.top + 30)
+        if detail:
+            self.draw_wrapped_clipped_top(detail, self.nano_font, MUTED, rect.left + 10, y + 2, text_width, rect.bottom - 6)
+
+    def is_warning_feedback(self, message, detail=''):
+        text = f'{message} {detail}'.lower()
+        return any(marker in text for marker in ('needs', 'try', 'unavailable', 'error', 'stronger'))
 
     def draw_response_panel(self, mission, x, y, width, bottom):
         response = self.player.mission_responses.get(mission.key)
@@ -3558,6 +3724,28 @@ class KnowledgeJournal:
         visible_lines = lines[-max_lines:] if clipped else lines
         if clipped and visible_lines:
             visible_lines[0] = '... ' + visible_lines[0]
+
+        for line in visible_lines:
+            surf = font.render(line, False, color)
+            self.display_surface.blit(surf, (x, y))
+            y += line_height
+        return y
+
+    def draw_wrapped_clipped_top(self, text, font, color, x, y, width, bottom):
+        lines = self.wrap_text(text, font, width)
+        line_height = font.get_height() + 4
+        max_lines = max(0, (bottom - y) // line_height)
+        if max_lines <= 0:
+            return y
+
+        clipped = len(lines) > max_lines
+        visible_lines = lines[:max_lines]
+        if clipped and visible_lines:
+            suffix = ' ...'
+            last_line = visible_lines[-1]
+            while last_line and font.size(last_line + suffix)[0] > width:
+                last_line = last_line[:-1].rstrip()
+            visible_lines[-1] = (last_line or visible_lines[-1]) + suffix
 
         for line in visible_lines:
             surf = font.render(line, False, color)

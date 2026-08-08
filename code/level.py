@@ -234,6 +234,10 @@ class Level:
         if self.shop_active:
             return
 
+        if self.knowledge and self.knowledge.welcome_active:
+            self.knowledge.handle_event(event)
+            return
+
         if self.daily_tasks and self.daily_tasks.active:
             self.daily_tasks.handle_event(event)
             return
@@ -318,7 +322,7 @@ class Level:
             pass
         elif self.notebook and self.notebook.active:
             pass
-        elif self.knowledge and self.knowledge.active:
+        elif self.knowledge and self.knowledge.is_blocking():
             pass
         else:
             self.all_sprites.update(dt)

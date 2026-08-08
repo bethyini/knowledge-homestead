@@ -4,7 +4,7 @@ from pathlib import Path
 from pygame.math import Vector2
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-APP_NAME = os.environ.get('KNOWLEDGE_GAME_APP_NAME', 'Knowledge Homestead')
+APP_NAME = os.environ.get('KNOWLEDGE_GAME_APP_NAME', 'Scholardew Valley')
 WINDOW_TITLE = APP_NAME
 
 

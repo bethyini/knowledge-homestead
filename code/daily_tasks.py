@@ -443,7 +443,7 @@ class DailyTasks:
         )
         self.player.strength += 1
         self.save_reward_state()
-        self.message = f'Earned {DAILY_REWARD_NAME}: +1 Strength.'
+        self.message = f'Earned {DAILY_REWARD_NAME} item and +1 Strength.'
         return True
 
     def reward_count(self):

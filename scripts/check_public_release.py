@@ -60,6 +60,9 @@ def check_missions():
     from knowledge import MISSIONS
 
     errors = []
+    if len(MISSIONS) != 3:
+        errors.append(f'public starter set should expose exactly 3 missions, found {len(MISSIONS)}')
+
     keys = [mission.key for mission in MISSIONS]
     reward_items = [mission.reward_item for mission in MISSIONS]
     for values, label in ((keys, 'mission key'), (reward_items, 'reward item')):

@@ -1,14 +1,14 @@
-# Knowledge Homestead
+# Scholardew Valley
 
-Knowledge Homestead is a paper-reading game built on top of the open-source Pydew Valley farming prototype. You walk around a small farm to collect artifacts of papers that are automatically chosen from Nature, Cell, or Science daily and placed in the game. Answer question prompts (graded by an LLM) to collect knowledge items, keep a notebook, and maintain daily tasks for in-game rewards! 
+Scholardew Valley is a paper-reading game built on top of the open-source Pydew Valley farming prototype. You walk around a small farm to collect paper artifacts, answer question prompts graded by an LLM, keep a notebook, and maintain daily tasks for in-game rewards.
 
 ## Features
 
 - Arrow-key avatar movement in a Stardew-like world
 - Collectible knowledge artifacts with 10-question paper missions
-- LLM grader
+- LLM grader with a clear missing-key error
 - Artifact chest with collected items and response history
-- Daily task desk with persistent tasks and a strawberry reward
+- Daily task desk with persistent tasks, `+1 Strength`, and a Strawberry inventory reward for daily completion
 - Player notebook for durable self-knowledge or study notes
 - Project-local default user data under `data/user/`
 
@@ -23,6 +23,7 @@ python code/main.py
 
 ## Controls
 
+- First launch: close the welcome board with `Enter`, `Space`, `Esc`, or the `Start` button
 - Arrow keys: move
 - Enter near an artifact: open the mission
 - Enter near the chest: open collected artifacts
@@ -33,7 +34,13 @@ python code/main.py
 
 ## LLM Grader
 
-To enable live semantic grading with an LLM, copy the example file:
+Submissions require an OpenAI API key. If the key is missing or the grader is unavailable, the game shows:
+
+```text
+API key unavailable: add API key first
+```
+
+To enable grading, copy the example file:
 
 ```bash
 cp .env.example .env
@@ -51,6 +58,8 @@ Restart the game after changing `.env`. Never commit `.env`.
 ## User Data
 
 The public repo is reset: it ships with no completed missions, no notebook entries, no task history, no downloaded papers, and no player save state.
+
+On a fresh save, a wooden welcome board appears once with setup instructions. After it is dismissed, the game records that in the local player state and does not show it again for that save.
 
 By default, new player data is generated locally in:
 
@@ -73,7 +82,7 @@ KNOWLEDGE_GAME_NOTEBOOK_HEADING="My Profile"
 
 ## Tailoring Interests
 
-The quickest way to tailor the game is to edit missions in `code/knowledge.py`. Each `Mission(...)` defines the paper/topic, prompt, facts the grader checks, reward item, field badge, XP, gold, artifact description, and optional paper questions.
+The public default starts with three paper missions: one BCI paper, one computational neuroscience paper, and one protein-design paper. The quickest way to tailor the game is to edit missions in `code/knowledge.py`. Each `Mission(...)` defines the paper/topic, prompt, facts the grader checks, reward item, field badge, XP, gold, artifact description, and optional paper questions.
 
 For a new interest area:
 
@@ -89,7 +98,7 @@ python scripts/check_public_release.py
 python -m py_compile code/*.py
 ```
 
-The existing missions skew toward BCI, computational neuroscience, neuroAI, protein design, ecology, and animals, but they are ordinary data entries and can be replaced with any public learning domain.
+The default missions can be replaced with any public learning domain.
 
 ## Mission Quality
 
