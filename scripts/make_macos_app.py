@@ -16,6 +16,7 @@ DIST_DIR = ROOT / 'dist'
 APP_PATH = DIST_DIR / f'{APP_NAME}.app'
 ICONSET_PATH = DIST_DIR / 'AppIcon.iconset'
 ICNS_PATH = APP_PATH / 'Contents' / 'Resources' / 'AppIcon.icns'
+USER_APPLICATIONS_DIR = Path.home().joinpath('Applications')
 
 
 def run(command):
@@ -121,17 +122,60 @@ def make_app():
     return APP_PATH
 
 
+def copy_app(app_path, destination_dir):
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination_path = destination_dir / app_path.name
+    if destination_path.exists():
+        shutil.rmtree(destination_path)
+    shutil.copytree(app_path, destination_path)
+    run(['touch', str(destination_path)])
+    return destination_path
+
+
 def copy_to_desktop(app_path):
-    desktop_path = Path.home().joinpath('Desktop', app_path.name)
-    if desktop_path.exists():
-        shutil.rmtree(desktop_path)
-    shutil.copytree(app_path, desktop_path)
-    return desktop_path
+    return copy_app(app_path, Path.home().joinpath('Desktop'))
+
+
+def copy_to_applications(app_path):
+    return copy_app(app_path, USER_APPLICATIONS_DIR)
+
+
+def pin_to_dock(app_path):
+    dock_entry = subprocess.run(
+        ['defaults', 'read', 'com.apple.dock', 'persistent-apps'],
+        capture_output=True,
+        text=True,
+        check=False)
+    app_path_text = str(app_path)
+    if app_path_text in dock_entry.stdout:
+        return False
+
+    tile = (
+        '<dict>'
+        '<key>tile-data</key>'
+        '<dict>'
+        '<key>file-data</key>'
+        '<dict>'
+        '<key>_CFURLString</key>'
+        f'<string>{app_path_text}</string>'
+        '<key>_CFURLStringType</key>'
+        '<integer>0</integer>'
+        '</dict>'
+        '<key>file-label</key>'
+        f'<string>{APP_NAME}</string>'
+        '</dict>'
+        '</dict>'
+    )
+    run(['defaults', 'write', 'com.apple.dock', 'persistent-apps', '-array-add', tile])
+    run(['killall', 'Dock'])
+    return True
 
 
 def main():
     parser = argparse.ArgumentParser(description='Build a clickable macOS app launcher for Scholardew Valley.')
     parser.add_argument('--desktop', action='store_true', help='Also copy the app bundle to ~/Desktop.')
+    parser.add_argument('--applications', action='store_true', help='Also copy the app bundle to ~/Applications.')
+    parser.add_argument('--dock', action='store_true', help='Pin the ~/Applications app bundle to the Dock.')
     args = parser.parse_args()
 
     if sys.platform != 'darwin':
@@ -141,6 +185,13 @@ def main():
     print(app_path)
     if args.desktop:
         print(copy_to_desktop(app_path))
+    applications_path = None
+    if args.applications or args.dock:
+        applications_path = copy_to_applications(app_path)
+        print(applications_path)
+    if args.dock:
+        pinned = pin_to_dock(applications_path)
+        print('Dock icon pinned.' if pinned else 'Dock icon already pinned.')
 
 
 if __name__ == '__main__':
