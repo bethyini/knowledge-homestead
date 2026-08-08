@@ -7,6 +7,9 @@ from pygame.math import Vector2
 PROJECT_ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 APP_NAME = os.environ.get('KNOWLEDGE_GAME_APP_NAME', 'Scholardew Valley')
 WINDOW_TITLE = APP_NAME
+APP_VERSION = '0.1.0'
+DEFAULT_UPDATE_CHECK_URL = 'https://raw.githubusercontent.com/bethyini/scholardew-valley/main/latest.json'
+UPDATE_CHECK_TIMEOUT = 2.5
 
 
 def project_path_from_env(name, default):

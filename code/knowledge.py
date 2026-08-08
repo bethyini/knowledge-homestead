@@ -7,12 +7,14 @@ from queue import Empty, Queue
 from threading import Thread
 import urllib.error
 import urllib.request
+import webbrowser
 from typing import Tuple
 
 import pygame
 
-from settings import ENV_PATH, KNOWLEDGE_STATE_PATH, LAYERS, SCREEN_HEIGHT, SCREEN_WIDTH
+from settings import APP_VERSION, ENV_PATH, KNOWLEDGE_STATE_PATH, LAYERS, SCREEN_HEIGHT, SCREEN_WIDTH
 from support import get_path
+from update_check import read_latest_update
 
 
 PANEL = (244, 229, 188)
@@ -1932,8 +1934,14 @@ class KnowledgeJournal:
         self.collection_mode = False
         self.grading = False
         self.grade_queue = Queue()
+        self.update_queue = Queue()
+        self.update_check_started = False
+        self.update_info = None
+        self.update_popup_active = False
         self.submit_button_rect = None
         self.welcome_button_rect = None
+        self.update_open_button_rect = None
+        self.update_later_button_rect = None
         self.answer = ''
         self.messages = {}
         self.feedback = {}
@@ -1946,6 +1954,7 @@ class KnowledgeJournal:
         self.load_daily_state()
         self.apply_daily_penalty()
         self.welcome_active = not self.player.welcome_seen
+        self.start_update_check()
 
     def make_slot(self):
         surf = pygame.Surface((54, 54), pygame.SRCALPHA)
@@ -2444,6 +2453,8 @@ class KnowledgeJournal:
             self.player.daily_reward_inventory = {}
         if not hasattr(self.player, 'welcome_seen'):
             self.player.welcome_seen = False
+        if not hasattr(self.player, 'dismissed_update_version'):
+            self.player.dismissed_update_version = ''
 
     def load_daily_state(self):
         if not STATE_PATH.exists():
@@ -2465,6 +2476,9 @@ class KnowledgeJournal:
         self.player.paper_read_dates = set(data.get('paper_read_dates', self.player.paper_read_dates))
         self.player.last_daily_check_date = data.get('last_daily_check_date', self.player.last_daily_check_date)
         self.player.welcome_seen = bool(data.get('welcome_seen', self.player.welcome_seen))
+        self.player.dismissed_update_version = str(data.get(
+            'dismissed_update_version',
+            self.player.dismissed_update_version))
         self.reconcile_progress_state()
 
     def save_daily_state(self):
@@ -2479,6 +2493,7 @@ class KnowledgeJournal:
             'paper_read_dates': sorted(self.player.paper_read_dates),
             'last_daily_check_date': self.player.last_daily_check_date,
             'welcome_seen': self.player.welcome_seen,
+            'dismissed_update_version': self.player.dismissed_update_version,
         }
         try:
             STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -2703,13 +2718,55 @@ class KnowledgeJournal:
 
         return message, detail
 
+    def start_update_check(self):
+        if self.update_check_started:
+            return
+
+        self.update_check_started = True
+        Thread(target=self.update_check_worker, daemon=True).start()
+
+    def update_check_worker(self):
+        self.update_queue.put(read_latest_update())
+
+    def poll_update_result(self):
+        try:
+            update_info = self.update_queue.get_nowait()
+        except Empty:
+            return
+
+        if update_info and update_info.version != self.player.dismissed_update_version:
+            self.update_info = update_info
+
+    def activate_update_popup_if_ready(self):
+        if (
+                self.update_info and
+                not self.update_popup_active and
+                not self.active and
+                not self.welcome_active and
+                self.update_info.version != self.player.dismissed_update_version):
+            self.update_popup_active = True
+
+    def has_modal_popup(self):
+        return self.welcome_active or self.update_popup_active
+
     def is_blocking(self):
-        return self.welcome_active or self.active
+        return self.welcome_active or self.update_popup_active or self.active
 
     def dismiss_welcome(self):
         self.welcome_active = False
         self.player.welcome_seen = True
         self.save_daily_state()
+
+    def dismiss_update_popup(self):
+        if self.update_info:
+            self.player.dismissed_update_version = self.update_info.version
+            self.save_daily_state()
+        self.update_popup_active = False
+
+    def open_update_page(self):
+        if self.update_info and self.update_info.url:
+            webbrowser.open(self.update_info.url)
+        self.dismiss_update_popup()
 
     def is_complete_index(self, index):
         return self.missions[index].key in self.player.completed_missions
@@ -2725,6 +2782,9 @@ class KnowledgeJournal:
     def handle_event(self, event):
         if self.welcome_active:
             return self.handle_welcome_event(event)
+
+        if self.update_popup_active:
+            return self.handle_update_event(event)
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             return self.handle_mouse_event(event)
@@ -2795,6 +2855,24 @@ class KnowledgeJournal:
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE, pygame.K_ESCAPE):
             self.dismiss_welcome()
             return True
+
+        return True
+
+    def handle_update_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if self.update_open_button_rect and self.update_open_button_rect.collidepoint(event.pos):
+                self.open_update_page()
+            elif self.update_later_button_rect and self.update_later_button_rect.collidepoint(event.pos):
+                self.dismiss_update_popup()
+            return True
+
+        if event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                self.open_update_page()
+                return True
+            if event.key == pygame.K_ESCAPE:
+                self.dismiss_update_popup()
+                return True
 
         return True
 
@@ -3112,6 +3190,7 @@ class KnowledgeJournal:
 
     def display_hud(self):
         self.poll_grading_result()
+        self.poll_update_result()
         self.ensure_player_state()
         inventory = self.player.knowledge_inventory
         fields = ', '.join(
@@ -3176,6 +3255,11 @@ class KnowledgeJournal:
     def display(self):
         if self.welcome_active:
             self.draw_welcome_popup()
+            return
+
+        self.activate_update_popup_if_ready()
+        if self.update_popup_active:
+            self.draw_update_popup()
             return
 
         if not self.active:
@@ -3294,6 +3378,86 @@ class KnowledgeJournal:
 
         hint = self.tiny_font.render('Enter / Space / Esc also closes this once.', False, (92, 76, 60))
         self.display_surface.blit(hint, (inset.left + 22, slab.bottom - 58))
+
+    def draw_update_popup(self):
+        self.submit_button_rect = None
+        self.update_open_button_rect = None
+        self.update_later_button_rect = None
+
+        if not self.update_info:
+            self.update_popup_active = False
+            return
+
+        shade = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        shade.fill((31, 22, 15, 46))
+        self.display_surface.blit(shade, (0, 0))
+
+        slab = pygame.Rect(260, 128, SCREEN_WIDTH - 520, SCREEN_HEIGHT - 256)
+        pygame.draw.rect(self.display_surface, (73, 45, 29), slab.move(7, 8), border_radius=8)
+        pygame.draw.rect(self.display_surface, (191, 132, 72), slab, border_radius=8)
+        pygame.draw.rect(self.display_surface, (91, 55, 35), slab, 4, border_radius=8)
+
+        inset = slab.inflate(-56, -52)
+        pygame.draw.rect(self.display_surface, (248, 233, 196), inset, border_radius=6)
+        pygame.draw.rect(self.display_surface, (112, 70, 43), inset, 3, border_radius=6)
+
+        badge = pygame.Rect(inset.left + 22, inset.top + 24, 92, 34)
+        pygame.draw.rect(self.display_surface, (207, 153, 74), badge, border_radius=5)
+        pygame.draw.rect(self.display_surface, (112, 70, 43), badge, 2, border_radius=5)
+        badge_text = self.tiny_font.render(f'v{self.update_info.version}', False, INK)
+        self.display_surface.blit(badge_text, badge_text.get_rect(center=badge.center))
+
+        title = self.font.render('Update Available', False, INK)
+        self.display_surface.blit(title, (badge.right + 18, inset.top + 20))
+
+        y = inset.top + 82
+        subtitle = f'You are running Scholardew Valley v{APP_VERSION}.'
+        y = self.draw_wrapped_clipped_top(
+            subtitle,
+            self.small_font,
+            MUTED,
+            inset.left + 24,
+            y,
+            inset.width - 48,
+            y + 38)
+        y += 10
+
+        update_title = self.update_info.title
+        if update_title:
+            y = self.draw_wrapped_clipped_top(
+                update_title,
+                self.small_font,
+                ACCENT,
+                inset.left + 24,
+                y,
+                inset.width - 48,
+                y + 44)
+            y += 10
+
+        y = self.draw_wrapped_clipped_top(
+            self.update_info.message,
+            self.tiny_font,
+            INK,
+            inset.left + 24,
+            y,
+            inset.width - 48,
+            inset.bottom - 94)
+
+        footer = self.tiny_font.render('Enter opens GitHub. Esc reminds you on the next version.', False, MUTED)
+        self.display_surface.blit(footer, (inset.left + 24, inset.bottom - 84))
+
+        self.update_later_button_rect = pygame.Rect(inset.right - 314, inset.bottom - 58, 112, 38)
+        self.update_open_button_rect = pygame.Rect(inset.right - 184, inset.bottom - 58, 160, 38)
+
+        pygame.draw.rect(self.display_surface, (232, 204, 151), self.update_later_button_rect, border_radius=5)
+        pygame.draw.rect(self.display_surface, (112, 70, 43), self.update_later_button_rect, 2, border_radius=5)
+        later_label = self.small_font.render('Later', False, INK)
+        self.display_surface.blit(later_label, later_label.get_rect(center=self.update_later_button_rect.center))
+
+        pygame.draw.rect(self.display_surface, (207, 153, 74), self.update_open_button_rect, border_radius=5)
+        pygame.draw.rect(self.display_surface, (54, 35, 26), self.update_open_button_rect, 2, border_radius=5)
+        open_label = self.small_font.render('Open GitHub', False, INK)
+        self.display_surface.blit(open_label, open_label.get_rect(center=self.update_open_button_rect.center))
 
     def draw_collection_list(self, rect):
         pygame.draw.rect(self.display_surface, (232, 204, 151), rect, border_radius=6)

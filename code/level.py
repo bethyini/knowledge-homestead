@@ -234,7 +234,7 @@ class Level:
         if self.shop_active:
             return
 
-        if self.knowledge and self.knowledge.welcome_active:
+        if self.knowledge and self.knowledge.has_modal_popup():
             self.knowledge.handle_event(event)
             return
 

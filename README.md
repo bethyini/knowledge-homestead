@@ -10,6 +10,7 @@ Scholardew Valley is a paper-reading game built on top of the open-source Pydew 
 - Artifact chest with collected items and response history
 - Daily task desk with persistent tasks, `+1 Strength`, and a Strawberry inventory reward for daily completion
 - Player notebook for durable self-knowledge or study notes
+- In-game update notice for new public releases
 - Project-local default user data under `data/user/`
 
 ## Run Locally
@@ -71,6 +72,8 @@ Restart the game after changing `.env`. Never commit `.env`.
 
 On a fresh save, a wooden welcome board appears once with setup instructions. After it is dismissed, the game records that in the local player state and does not show it again for that save.
 
+On launch, the game also checks `latest.json` on GitHub. If that file reports a newer version than the local app, the game shows a wooden update board with a GitHub link. Dismissing the board suppresses that specific version only; the next newer version can notify the player again.
+
 By default, new player data is generated locally in:
 
 ```text
@@ -88,7 +91,26 @@ KNOWLEDGE_GAME_TASKS_PATH=/path/to/daily-tasks.md
 KNOWLEDGE_GAME_APP_NAME="My Learning Game"
 KNOWLEDGE_GAME_NOTEBOOK_TITLE="Research Notebook"
 KNOWLEDGE_GAME_NOTEBOOK_HEADING="My Profile"
+SCHOLARDEW_UPDATE_CHECK=1
+SCHOLARDEW_UPDATE_URL=https://raw.githubusercontent.com/bethyini/scholardew-valley/main/latest.json
 ```
+
+To disable update checks, set `SCHOLARDEW_UPDATE_CHECK=0`.
+
+## Publishing Updates
+
+When publishing a new version:
+
+1. Update `APP_VERSION` in `code/settings.py`.
+2. Update `latest.json` with the same version, a short message, and a GitHub release or download URL.
+3. Commit and push the change.
+4. Build the app bundle:
+
+```bash
+python scripts/make_macos_app.py --desktop --applications --dock
+```
+
+Users on older versions will see the in-game update board the next time they launch the game with internet access.
 
 ## Tailoring Interests
 
