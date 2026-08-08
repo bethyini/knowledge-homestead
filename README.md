@@ -6,7 +6,7 @@ Scholardew Valley is a paper-reading game built on top of the open-source Pydew 
 
 - Arrow-key avatar movement in a Stardew-like world
 - Collectible knowledge artifacts with 10-question paper missions
-- LLM grader with a clear missing-key error
+- LLM grader
 - Artifact chest with collected items and response history
 - Daily task desk with persistent tasks, `+1 Strength`, and a Strawberry inventory reward for daily completion
 - Player notebook for durable self-knowledge or study notes
@@ -56,8 +56,6 @@ OPENAI_GRADER_MODEL=gpt-4o-mini
 Restart the game after changing `.env`. Never commit `.env`.
 
 ## User Data
-
-The public repo is reset: it ships with no completed missions, no notebook entries, no task history, no downloaded papers, and no player save state.
 
 On a fresh save, a wooden welcome board appears once with setup instructions. After it is dismissed, the game records that in the local player state and does not show it again for that save.
 
@@ -109,19 +107,6 @@ A good mission has:
 - A unique `key` and `reward_item`
 - A short artifact description
 - A procedural icon branch for both artifact views
-
-Do not commit copyrighted PDFs or private notes. Link to legal public sources instead.
-
-## Public Release Checks
-
-Before pushing a fork, run:
-
-```bash
-python scripts/check_public_release.py
-git status --short --ignored
-```
-
-The release checker scans for personal paths, key-shaped OpenAI secrets, duplicate mission IDs, missing ignore rules, and malformed 10-question missions.
 
 ## Credits
 
