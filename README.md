@@ -33,7 +33,7 @@ python code/main.py
 
 ## LLM Grader
 
-The game works without an API key by using the local keyword grader. To enable live semantic grading with an LLM, copy the example file:
+To enable live semantic grading with an LLM, copy the example file:
 
 ```bash
 cp .env.example .env
