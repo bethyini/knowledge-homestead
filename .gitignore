@@ -3,6 +3,7 @@
 /.pytest_cache
 /.env
 /.venv
+/dist
 /data/*_state.json
 /data/user/*
 !/data/user/.gitkeep

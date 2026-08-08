@@ -21,6 +21,18 @@ pip install -r requirements.txt
 python code/main.py
 ```
 
+## macOS App Icon
+
+To create a persistent clickable app icon, build the local macOS app bundle:
+
+```bash
+python scripts/make_macos_app.py --desktop
+```
+
+This creates `dist/Scholardew Valley.app` and copies it to your Desktop. Double-click the app icon to launch the game. The app bundle points at the current clone, so rebuild it if you move the repo.
+
+On macOS, the launcher opens the game through Terminal so it can access the local virtual environment and game files without extra privacy permissions.
+
 ## Controls
 
 - First launch: close the welcome board with `Enter`, `Space`, `Esc`, or the `Start` button
