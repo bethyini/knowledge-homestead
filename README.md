@@ -1,12 +1,12 @@
 # Knowledge Homestead
 
-Knowledge Homestead is a desktop Pygame learning game built on top of the open-source Pydew Valley farming prototype. You walk around a small farm, open artifacts, answer question prompts, collect knowledge items, keep a notebook, and maintain daily tasks for small in-game rewards.
+Knowledge Homestead is a paper-reading game built on top of the open-source Pydew Valley farming prototype. You walk around a small farm to collect artifacts of papers that are automatically chosen from Nature, Cell, or Science daily and placed in the game. Answer question prompts (graded by an LLM) to collect knowledge items, keep a notebook, and maintain daily tasks for in-game rewards! 
 
 ## Features
 
 - Arrow-key avatar movement in a Stardew-like world
 - Collectible knowledge artifacts with 10-question paper missions
-- Local keyword grader with optional OpenAI semantic grader
+- LLM grader
 - Artifact chest with collected items and response history
 - Daily task desk with persistent tasks and a strawberry reward
 - Player notebook for durable self-knowledge or study notes
