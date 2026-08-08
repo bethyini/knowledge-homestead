@@ -15,6 +15,9 @@ class Game:
         self.level = Level()
 
     def set_app_icon(self):
+        if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
+            return
+
         icon_path = PROJECT_ROOT / 'graphics' / 'ui' / 'app_icon.png'
         if not icon_path.exists():
             return

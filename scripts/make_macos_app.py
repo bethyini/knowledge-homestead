@@ -20,6 +20,7 @@ HOOKS_DIR = BUILD_DIR / 'hooks'
 USER_APPLICATIONS_DIR = Path.home().joinpath('Applications')
 APP_SUPPORT_DIR = Path.home().joinpath('Library', 'Application Support', APP_NAME)
 DOCK_PLIST = Path.home().joinpath('Library', 'Preferences', 'com.apple.dock.plist')
+LSREGISTER = Path('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister')
 
 
 def run(command):
@@ -146,7 +147,7 @@ def copy_app(app_path, destination_dir):
     if destination_path.exists():
         shutil.rmtree(destination_path)
     shutil.copytree(app_path, destination_path)
-    run(['touch', str(destination_path)])
+    refresh_launch_services(destination_path)
     return destination_path
 
 
@@ -165,6 +166,12 @@ def seed_app_support_data():
         return None
     shutil.copytree(source, destination)
     return destination
+
+
+def refresh_launch_services(app_path):
+    run(['touch', str(app_path)])
+    if LSREGISTER.exists():
+        subprocess.run([str(LSREGISTER), '-f', str(app_path)], check=False)
 
 
 def dock_item_label(item):
@@ -232,8 +239,7 @@ def prune_stale_dock_entries(app_path):
 def pin_to_dock(app_path):
     has_target, changed = prune_stale_dock_entries(app_path)
     if has_target:
-        if changed:
-            run(['killall', 'Dock'])
+        run(['killall', 'Dock'])
         return False
 
     dock_entry = subprocess.run(
