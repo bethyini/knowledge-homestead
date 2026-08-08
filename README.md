@@ -31,7 +31,7 @@ python code/main.py
 - `J`: open journal
 - `Esc`: close open panels
 
-## Optional OpenAI Grader
+## LLM Grader
 
 The game works without an API key by using the local keyword grader. To enable live semantic grading with an LLM, copy the example file:
 
