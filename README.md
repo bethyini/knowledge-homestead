@@ -116,8 +116,10 @@ Users on older versions will see the in-game update board the next time they lau
 
 Rewards use fixed tiers rather than per-question formulas:
 
-- Field-note artifact: `25 XP` and `10g`
+- Quick artifact challenge: `25 XP` and `10g`
 - Full paper mission: `100 XP` and `50g`
+
+Quick artifact challenges are short fact checks for a topic or collectible. Full paper missions are paper-based missions with 10 questions and a larger artifact reward.
 
 One full paper mission is one clean field-level step because field levels are spaced every `100 XP`.
 

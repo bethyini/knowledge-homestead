@@ -1,6 +1,7 @@
 from pathlib import Path
 import argparse
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -11,11 +12,12 @@ APP_NAME = 'Scholardew Valley'
 BUNDLE_ID = 'com.bethyini.scholardewvalley'
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ICON = ROOT / 'graphics' / 'ui' / 'app_icon.png'
+ICON_NAME = 'ScholardewValleyBook'
 DIST_DIR = ROOT / 'dist'
 BUILD_DIR = ROOT / 'build' / 'pyinstaller'
 APP_PATH = DIST_DIR / f'{APP_NAME}.app'
-ICONSET_PATH = BUILD_DIR / 'AppIcon.iconset'
-ICNS_PATH = BUILD_DIR / 'AppIcon.icns'
+ICONSET_PATH = BUILD_DIR / f'{ICON_NAME}.iconset'
+ICNS_PATH = BUILD_DIR / f'{ICON_NAME}.icns'
 HOOKS_DIR = BUILD_DIR / 'hooks'
 USER_APPLICATIONS_DIR = Path.home().joinpath('Applications')
 APP_SUPPORT_DIR = Path.home().joinpath('Library', 'Application Support', APP_NAME)
@@ -25,6 +27,14 @@ LSREGISTER = Path('/System/Library/Frameworks/CoreServices.framework/Frameworks/
 
 def run(command):
     subprocess.run(command, check=True)
+
+
+def app_version():
+    settings_text = ROOT.joinpath('code', 'settings.py').read_text()
+    match = re.search(r"APP_VERSION\s*=\s*['\"]([^'\"]+)['\"]", settings_text)
+    if not match:
+        raise SystemExit('Could not read APP_VERSION from code/settings.py')
+    return match.group(1)
 
 
 def make_iconset():
@@ -67,13 +77,21 @@ def patch_info_plist(app_path):
     plist_path = app_info_plist_path(app_path)
     with plist_path.open('rb') as file:
         plist = plistlib.load(file)
+    version = app_version()
     plist.update({
         'CFBundleDisplayName': APP_NAME,
         'CFBundleIdentifier': BUNDLE_ID,
+        'CFBundleIconFile': ICON_NAME,
+        'CFBundleIconName': ICON_NAME,
         'CFBundleName': APP_NAME,
+        'CFBundleShortVersionString': version,
+        'CFBundleVersion': version,
         'LSMinimumSystemVersion': '10.15',
         'NSHighResolutionCapable': True,
     })
+    resources_dir = app_path / 'Contents' / 'Resources'
+    resources_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ICNS_PATH, resources_dir / f'{ICON_NAME}.icns')
     with plist_path.open('wb') as file:
         plistlib.dump(plist, file, sort_keys=False)
 
@@ -202,29 +220,22 @@ def is_scholardew_entry(item):
     return dock_item_label(item) == APP_NAME or path.endswith(f'/{APP_NAME}.app')
 
 
-def prune_stale_dock_entries(app_path):
+def prune_stale_dock_entries(_app_path):
     if not DOCK_PLIST.exists():
-        return False, False
+        return False
 
     with DOCK_PLIST.open('rb') as file:
         dock = plistlib.load(file)
 
-    target_path = str(app_path.resolve()).rstrip('/')
     filtered_apps = []
     changed = False
-    has_target = False
 
     for item in dock.get('persistent-apps', []):
-        path = dock_url_path(dock_item_url(item))
         if is_stale_python_launcher(item):
             changed = True
             continue
         if is_scholardew_entry(item):
-            if path == target_path and not has_target:
-                filtered_apps.append(item)
-                has_target = True
-            else:
-                changed = True
+            changed = True
             continue
         filtered_apps.append(item)
 
@@ -233,14 +244,11 @@ def prune_stale_dock_entries(app_path):
         with DOCK_PLIST.open('wb') as file:
             plistlib.dump(dock, file, sort_keys=False)
 
-    return has_target, changed
+    return changed
 
 
 def pin_to_dock(app_path):
-    has_target, changed = prune_stale_dock_entries(app_path)
-    if has_target:
-        run(['killall', 'Dock'])
-        return False
+    changed = prune_stale_dock_entries(app_path)
 
     dock_entry = subprocess.run(
         ['defaults', 'read', 'com.apple.dock', 'persistent-apps'],
@@ -250,6 +258,8 @@ def pin_to_dock(app_path):
     app_path_text = str(app_path)
     app_uri = app_path.resolve().as_uri()
     if app_path_text in dock_entry.stdout or app_uri in dock_entry.stdout or APP_NAME in dock_entry.stdout:
+        if changed:
+            run(['killall', 'Dock'])
         return False
 
     tile = (

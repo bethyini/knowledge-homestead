@@ -8,16 +8,13 @@ from level import Level
 class Game:
     def __init__(self):
         pygame.init()
+        self.set_app_icon()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption(WINDOW_TITLE)
-        self.set_app_icon()
         self.clock = pygame.time.Clock()
         self.level = Level()
 
     def set_app_icon(self):
-        if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
-            return
-
         icon_path = PROJECT_ROOT / 'graphics' / 'ui' / 'app_icon.png'
         if not icon_path.exists():
             return

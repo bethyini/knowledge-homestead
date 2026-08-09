@@ -40,7 +40,7 @@ STARTER_MISSION_KEYS = (
     'rfdiffusion',
 )
 REWARD_TIERS = {
-    'field_note': {'xp': 25, 'gold': 10},
+    'quick_artifact': {'xp': 25, 'gold': 10},
     'paper_mission': {'xp': 100, 'gold': 50},
 }
 
@@ -70,14 +70,14 @@ load_env_file()
 
 
 def reward_xp(_required_hits, has_questions=False):
-    tier = 'paper_mission' if has_questions else 'field_note'
+    tier = 'paper_mission' if has_questions else 'quick_artifact'
     return REWARD_TIERS[tier]['xp']
 
 
 def reward_gold(xp):
     if xp >= REWARD_TIERS['paper_mission']['xp']:
         return REWARD_TIERS['paper_mission']['gold']
-    return REWARD_TIERS['field_note']['gold']
+    return REWARD_TIERS['quick_artifact']['gold']
 
 
 @dataclass(frozen=True)
